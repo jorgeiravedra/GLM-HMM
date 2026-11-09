@@ -1,0 +1,134 @@
+{
+ "project_root": "/scratch/gpfs/AFALKNER/jmig/glmhmm",
+ "data": {
+  "full_data": "data/multifiber.pickle",
+  "features": "data/features.pickle",
+  "labels": "data/sniffing_labels.pickle"
+ },
+ "animals": {
+  "EXP": [
+   "3095",
+   "3096",
+   "3097",
+   "4013",
+   "4014",
+   "4015",
+   "4016",
+   "91R2",
+   "30L",
+   "30B",
+   "31R2",
+   "29L2"
+  ],
+  "OBS": [
+   "30R2",
+   "29L",
+   "86L",
+   "87L2",
+   "927R",
+   "927L",
+   "933R",
+   "1185",
+   "1162B"
+  ],
+  "NON": [
+   "87R2",
+   "87L",
+   "87B",
+   "86L2",
+   "583L2",
+   "583B",
+   "1162L2",
+   "1162R"
+  ]
+ },
+ "session_filter": {
+  "group": "OBS",
+  "exclude_days": [
+   9
+  ],
+  "cond_tokens": [
+   "obs"
+  ]
+ },
+ "regions": [
+  "VMH (E)",
+  "VMH (I)",
+  "PMv (E)",
+  "PMv (I)",
+  "AH (E)",
+  "AH (I)",
+  "MeA (I)",
+  "vLS (I)",
+  "PrL (E)",
+  "PrL (I)",
+  "NAc (DA)"
+ ],
+ "_comment_variants": "Each variant is a DesignConfig. They answer different questions, not robustness checks of one another: ar2 vs ar0 trades drift protection against swamping the kinematic filters; attention restricts states to encoding regimes within engagement rather than engagement regimes that gate encoding; drift adds the slow time basis for unstable dF/F.",
+ "variants": {
+  "ar2": {
+   "fs": 40.0,
+   "n_basis": 5,
+   "n_ar": 2,
+   "scaling": "zscore",
+   "n_drift_basis": 0,
+   "label_align": "tail",
+   "max_label_excess": 6000
+  },
+  "ar0": {
+   "fs": 40.0,
+   "n_basis": 5,
+   "n_ar": 0,
+   "scaling": "zscore",
+   "n_drift_basis": 0,
+   "label_align": "tail",
+   "max_label_excess": 6000
+  },
+  "ar0_drift": {
+   "fs": 40.0,
+   "n_basis": 5,
+   "n_ar": 0,
+   "scaling": "robust",
+   "n_drift_basis": 10,
+   "drift_knot_s": 45.0,
+   "label_align": "tail",
+   "max_label_excess": 6000,
+   "_note": "drift is applied by residualizing X and Y against a per-session basis, not as model columns"
+  },
+  "ar0_attention": {
+   "fs": 40.0,
+   "n_basis": 5,
+   "n_ar": 0,
+   "scaling": "zscore",
+   "n_drift_basis": 0,
+   "label_align": "tail",
+   "max_label_excess": 6000,
+   "restrict_to_label": 4
+  }
+ },
+ "fit": {
+  "Ks": [
+   1,
+   2,
+   3,
+   4
+  ],
+  "ridge": 10.0,
+  "n_restarts": 5,
+  "max_iter": 200,
+  "tol": 1e-05,
+  "sticky": 0.0,
+  "seed": 20261104
+ },
+ "analyses": {
+  "variance_partition": true,
+  "variance_partition_K": 1,
+  "shuffle_control": true,
+  "n_shuffle": 10,
+  "shuffle_K": [
+   1,
+   2,
+   3
+  ]
+ }
+}
