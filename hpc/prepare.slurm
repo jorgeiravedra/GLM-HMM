@@ -8,7 +8,7 @@
 #SBATCH --output=/scratch/gpfs/AFALKNER/jmig/glmhmm/logs/prep_%j.out
 #SBATCH --error=/scratch/gpfs/AFALKNER/jmig/glmhmm/logs/prep_%j.err
 #SBATCH --mail-type=end,fail
-#SBATCH --mail-user=jmig@princeton.edu
+#SBATCH --mail-user=CHANGEME@princeton.edu
 #
 # Stage 1: audits, SessionSet construction, task manifest.
 #

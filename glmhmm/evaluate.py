@@ -308,6 +308,54 @@ def weight_table(model: SwitchingGLM, ss: SessionSet,
 
 
 # =============================================================== controls ====
+def fit_loso_within_animal(ss: SessionSet, cfg: FitConfig | None = None,
+                           min_sessions: int = 3,
+                           verbose: bool = True) -> pd.DataFrame:
+    """Leave-one-session-out, fitting and testing WITHIN each animal.
+
+    The diagnostic for whether complete pooling is the limiting factor. If
+    within-animal prediction clearly beats the pooled leave-one-animal-out
+    result, the filters are animal-specific and pooling averages them toward
+    zero -- a null then reflects heterogeneity, not absent encoding. If the
+    two are comparable, pooling is fine and the ceiling is SNR.
+
+    n here is still animals: one row per (animal, held-out session), to be
+    aggregated per animal before any test. Each fit sees only one animal's
+    data, so it is far more weakly constrained than the pooled fit -- expect
+    noisier estimates and read the per-animal spread, not the grand median.
+    """
+    cfg = FitConfig() if cfg is None else cfg
+    P = ss.X.shape[1]
+    rows = []
+    for a in np.unique(ss.animal):
+        am = ss.animal == a
+        sess = np.unique(ss.seq_id[am])
+        if sess.size < min_sessions:
+            if verbose:
+                print(f'  {a}: skipped ({sess.size} sessions)')
+            continue
+        for s_out in sess:
+            te_m = am & (ss.seq_id == s_out)
+            tr_m = am & (ss.seq_id != s_out)
+            tr, te = _subset(ss, tr_m), _subset(ss, te_m)
+            if len(tr.X) < max(10 * P, 500) or len(te.X) < max(2 * P, 200):
+                continue
+            m = SwitchingGLM(cfg).fit(tr)
+            ss_tot = ((te.Y - te.Y.mean(0)) ** 2).sum(0)
+            den = np.where(ss_tot > 0, ss_tot, np.nan)
+            r2i = 1.0 - ((te.Y - m.input_predict(te)) ** 2).sum(0) / den
+            rows.append(dict(animal=a, held_out_session=int(s_out),
+                             K=cfg.n_states, n_train=len(tr.X),
+                             n_test=len(te.X),
+                             ll_per_frame=float(m.log_likelihood(te) / len(te.X)),
+                             **{f'r2_input[{r}]': float(v)
+                                for r, v in zip(ss.regions, r2i)}))
+            if verbose:
+                print(f'  {a} session {s_out}: '
+                      f'r2_input={dict(zip(ss.regions, np.round(r2i, 4)))}')
+    return pd.DataFrame(rows)
+
+
 def weight_sharing_test(ss: SessionSet, Ks=(1, 2, 3), 
                         base: FitConfig | None = None,
                         verbose: bool = True) -> pd.DataFrame:
@@ -392,7 +440,8 @@ def shuffle_control(ss: SessionSet, cfg: FitConfig | None = None,
 
 def variance_partition(ss: SessionSet, cfg: FitConfig | None = None,
                        groups=('event', 'resident', 'intruder', 'dyadic',
-                               'behavior', 'autoregressive'),
+                               'observer', 'sham', 'behavior',
+                               'autoregressive'),
                        verbose: bool = False) -> pd.DataFrame:
     """Unique variance per feature group: drop in LOAO R^2 when knocked out.
 

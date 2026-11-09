@@ -54,12 +54,6 @@
  "regions": [
   "VMH (E)",
   "VMH (I)",
-  "PMv (E)",
-  "PMv (I)",
-  "AH (E)",
-  "AH (I)",
-  "MeA (I)",
-  "vLS (I)",
   "PrL (E)",
   "PrL (I)",
   "NAc (DA)"
@@ -93,7 +87,7 @@
    "drift_knot_s": 45.0,
    "label_align": "tail",
    "max_label_excess": 6000,
-   "_note": "drift is applied by residualizing X and Y against a per-session basis, not as model columns"
+   "_note": "drift residualized out of X and Y per session, not added as model columns"
   },
   "ar0_attention": {
    "fs": 40.0,

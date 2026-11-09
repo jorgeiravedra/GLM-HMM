@@ -222,14 +222,35 @@ def prune_feature_columns(cols, cfg: DesignConfig) -> list[str]:
 
 
 def feature_group(col: str) -> str:
-    """Assign a kinematic column to resident / intruder / dyadic.
+    """Assign a feature column to a variance-partition group.
 
-    Order matters: compound 'X2Y' names are relational, not single-animal.
-    CAVEAT for interpretation: only the single-animal features can adjudicate
+    Order matters and is not negotiable:
+
+      sham*                    -> 'sham'      arena-position control; must be
+                                   caught FIRST, since 'sham resident ...'
+                                   would otherwise match 'resident'
+      *observer*               -> 'observer'  observer-referenced; caught
+                                   BEFORE the per-animal prefixes, since
+                                   'resident centroid2observer' is about where
+                                   the fight is relative to the platform, not
+                                   about resident kinematics. Pooling it with
+                                   'resident' would make the partition
+                                   uninterpretable.
+      *intruder2resident*,
+      *resident2intruder*      -> 'dyadic'    relational, not single-animal
+      intruder*                -> 'intruder'
+      resident*                -> 'resident'
+      everything else          -> 'dyadic'    ious, proximity, ...
+
+    CAVEAT for interpretation: only the single-animal groups can adjudicate
     aggressor- vs subordinate-referenced coding. Symmetric distances
     (head-head), IoU and proximity are dyadic and belong to neither.
     """
     c = str(col).lower().strip()
+    if c.startswith('sham'):
+        return 'sham'
+    if 'observer' in c:
+        return 'observer'
     if 'intruder2resident' in c or 'resident2intruder' in c:
         return 'dyadic'
     if c.startswith('intruder'):

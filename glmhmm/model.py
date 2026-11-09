@@ -51,6 +51,8 @@ class SwitchingGLM:
         self.ll_trace_: list[float] = []
         self.ll_: float = np.nan
         self.converged_: bool = False
+        self.W_animal: dict = {}      # animal -> [W_k]; empty = complete pooling
+        self.b_animal: dict = {}
 
     # ------------------------------------------------------------ batching --
     @classmethod
@@ -87,14 +89,26 @@ class SwitchingGLM:
         return packed
 
     # ---------------------------------------------------------- emissions --
+    def _state_mean(self, ss, k: int) -> np.ndarray:
+        """(T, D) mean for state k, using per-animal weights where the animal
+        was seen during fitting and the group weights otherwise."""
+        if not getattr(self, 'W_animal', None):
+            return ss.X @ self.W[k].T + self.b[k]
+        out = ss.X @ self.W[k].T + self.b[k]
+        for a, Ws in self.W_animal.items():
+            m = ss.animal == a
+            if m.any() and Ws[k] is not None:
+                out[m] = ss.X[m] @ Ws[k].T + self.b_animal[a][k]
+        return out
+
     def _log_emission_flat(self, ss) -> np.ndarray:
         """(T_total, K) log N(y_t | W_k x_t + b_k, S_k), computed on the flat
         design. No padding -- this is the large array and it stays flat."""
-        X, Y = ss.X, ss.Y
+        Y = ss.Y
         D = Y.shape[1]
-        out = np.empty((len(X), self.K))
+        out = np.empty((len(ss.X), self.K))
         for k in range(self.K):
-            R = Y - (X @ self.W[k].T + self.b[k])
+            R = Y - self._state_mean(ss, k)
             Sk = self.S[k] + self.cfg.var_floor * np.eye(D)
             if D == 1:
                 v = max(float(Sk[0, 0]), self.cfg.var_floor)
@@ -186,6 +200,56 @@ class SwitchingGLM:
         Reg[-1, -1] = 0.0                        # bias unpenalized
         return (lambda beta: (beta[:P].T, beta[P]))(np.linalg.solve(G + Reg, C))
 
+    def _solve_weights_hier(self, ss, gamma, k, animals, idx_by_animal):
+        """Partial-pooling weight update for one state.
+
+        Fits W_a = W_group + delta_a with ridge `ridge` on W_group and
+        `hier_tau` on each delta_a. Solved as one joint system in
+        [beta_group; delta_1 .. delta_A] whose blocks are per-animal Gram
+        matrices, so nothing of size (T x A*P) is ever materialised:
+
+            row g : (sum_a G_a + lam I) beta + sum_a G_a delta_a = sum_a C_a
+            row a : G_a beta + (G_a + tau I) delta_a             = C_a
+
+        Returns (W_group, b_group, {animal: (W_a, b_a)}).
+        """
+        P, D = ss.X.shape[1], ss.Y.shape[1]
+        A, Q = len(animals), P + 1
+        lam, tau = self.cfg.ridge, float(self.cfg.hier_tau)
+
+        Gs, Cs = [], []
+        for a in animals:
+            i = idx_by_animal[a]
+            Xa = np.column_stack([ss.X[i], np.ones(i.size)])
+            w = gamma[i, k]
+            Xw = Xa * w[:, None]
+            Gs.append(Xw.T @ Xa)
+            Cs.append(Xw.T @ ss.Y[i])
+
+        M = np.zeros(((A + 1) * Q, (A + 1) * Q))
+        R = np.zeros(((A + 1) * Q, D))
+        Gsum = np.zeros((Q, Q))
+        for a in range(A):
+            Gsum += Gs[a]
+            R[:Q] += Cs[a]
+            M[:Q, (a + 1) * Q:(a + 2) * Q] = Gs[a]
+            M[(a + 1) * Q:(a + 2) * Q, :Q] = Gs[a]
+            blk = Gs[a] + tau * np.eye(Q)
+            blk[-1, -1] -= tau                        # intercepts unpenalised
+            M[(a + 1) * Q:(a + 2) * Q, (a + 1) * Q:(a + 2) * Q] = blk
+            R[(a + 1) * Q:(a + 2) * Q] = Cs[a]
+        Reg = lam * np.eye(Q)
+        Reg[-1, -1] = 0.0
+        M[:Q, :Q] = Gsum + Reg
+
+        beta = np.linalg.solve(M + 1e-8 * np.eye(M.shape[0]), R)
+        Wg, bg = beta[:P].T, beta[P]
+        per = {}
+        for a_i, a in enumerate(animals):
+            d = beta[(a_i + 1) * Q:(a_i + 2) * Q]
+            per[a] = (Wg + d[:P].T, bg + d[P])
+        return Wg, bg, per
+
     def _init(self, ss, rng):
         X, Y = ss.X, ss.Y
         P, D = X.shape[1], Y.shape[1]
@@ -211,10 +275,14 @@ class SwitchingGLM:
         P, D = ss.X.shape[1], ss.Y.shape[1]
         Xb = np.column_stack([ss.X, np.ones(len(ss.X))])
         Y = ss.Y
+        animals = sorted(np.unique(ss.animal).tolist())
+        idx_by_animal = {a: np.flatnonzero(ss.animal == a) for a in animals}
+        self.W_animal, self.b_animal = {}, {}
 
         best_ll, best = -np.inf, None
         for r in range(cfg.n_restarts):
             rng = np.random.default_rng(cfg.seed + 1000 * r)
+            self.W_animal, self.b_animal = {}, {}
             self._init(ss, rng)
             prev, trace, converged, it, ll = -np.inf, [], False, 0, -np.inf
 
@@ -248,6 +316,20 @@ class SwitchingGLM:
                     for k in range(self.K):
                         self.W[k] = Wshared
                         self.b[k] = beta[P + k]
+                elif cfg.hier_tau is not None:
+                    # Partial pooling: W_a = W_group + delta_a, each delta
+                    # penalised by hier_tau. Held-out animals fall back to
+                    # W_group, which this estimates more cleanly than complete
+                    # pooling does when filters are animal-specific.
+                    for k in range(self.K):
+                        Wg, bg, per = self._solve_weights_hier(
+                            ss, gamma, k, animals, idx_by_animal)
+                        self.W[k], self.b[k] = Wg, bg
+                        for a, (Wa, ba) in per.items():
+                            self.W_animal.setdefault(a, [None] * self.K)
+                            self.b_animal.setdefault(a, [None] * self.K)
+                            self.W_animal[a][k] = Wa
+                            self.b_animal[a][k] = ba
                 else:
                     for k in range(self.K):               # weights
                         Xw = Xb * gamma[:, k][:, None]
@@ -255,7 +337,7 @@ class SwitchingGLM:
                             Xw.T @ Xb, Xw.T @ Y, P, cfg.ridge)
 
                 for k in range(self.K):                   # covariances
-                    Rk = Y - (ss.X @ self.W[k].T + self.b[k])
+                    Rk = Y - self._state_mean(ss, k)
                     w = gamma[:, k]
                     self.S[k] = ((Rk * w[:, None]).T @ Rk / max(w.sum(), 1.0)
                                  + cfg.var_floor * np.eye(D))
@@ -276,10 +358,12 @@ class SwitchingGLM:
             if ll > best_ll:
                 best_ll = ll
                 best = (self.A.copy(), self.pi.copy(), self.W.copy(),
-                        self.b.copy(), self.S.copy(), list(trace), converged)
+                        self.b.copy(), self.S.copy(), list(trace), converged,
+                        {a: list(v) for a, v in self.W_animal.items()},
+                        {a: list(v) for a, v in self.b_animal.items()})
 
-        (self.A, self.pi, self.W, self.b, self.S,
-         self.ll_trace_, self.converged_) = best
+        (self.A, self.pi, self.W, self.b, self.S, self.ll_trace_,
+         self.converged_, self.W_animal, self.b_animal) = best
         self.ll_ = float(best_ll)
         self._order_states(ss)
         return self
@@ -320,7 +404,7 @@ class SwitchingGLM:
         logB_flat = self._log_emission_flat(ss)
         logA = np.log(self.A + 1e-300)
         D = ss.Y.shape[1]
-        mu_flat = np.stack([ss.X @ self.W[k].T + self.b[k]
+        mu_flat = np.stack([self._state_mean(ss, k)
                             for k in range(self.K)], axis=1)   # (T, K, D)
         out = np.zeros_like(ss.Y)
         for bt in self._batches(ss):
@@ -375,7 +459,7 @@ class SwitchingGLM:
         pi = self.stationary()
         out = np.zeros_like(ss.Y)
         for k in range(self.K):
-            out += pi[k] * (ss.X @ self.W[k].T + self.b[k])
+            out += pi[k] * self._state_mean(ss, k)
         return out
 
     def viterbi(self, ss) -> np.ndarray:
@@ -425,7 +509,10 @@ class SwitchingGLM:
         """Serializable parameter bundle (no SessionSet reference)."""
         return dict(K=self.K, A=self.A, pi=self.pi, W=self.W, b=self.b,
                     S=self.S, ll=self.ll_, ll_trace=np.asarray(self.ll_trace_),
-                    converged=self.converged_, cfg=vars(self.cfg).copy()
+                    converged=self.converged_,
+                    W_animal={a: np.stack(v) for a, v in self.W_animal.items()},
+                    b_animal={a: np.stack(v) for a, v in self.b_animal.items()},
+                    cfg=vars(self.cfg).copy()
                     if hasattr(self.cfg, '__dict__') else dict())
 
     @classmethod
@@ -436,4 +523,6 @@ class SwitchingGLM:
         m.ll_ = float(d['ll'])
         m.ll_trace_ = list(np.asarray(d['ll_trace']))
         m.converged_ = bool(d['converged'])
+        m.W_animal = {a: list(v) for a, v in d.get('W_animal', {}).items()}
+        m.b_animal = {a: list(v) for a, v in d.get('b_animal', {}).items()}
         return m

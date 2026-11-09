@@ -1,14 +1,13 @@
 #!/bin/bash
 # One-time environment setup on Della.
 # Run on a LOGIN node:  bash hpc/setup_della.sh
-set -eo pipefail          # no -u: conda's activate reads $PS1 unguarded
+set -eo pipefail
 PS1=${PS1:-}
 
 PROJ=/scratch/gpfs/AFALKNER/jmig/glmhmm
 
 module purge
 module load anaconda3/2026.7
-eval "$(conda shell.bash hook)"   # makes `conda activate` work non-interactively
 
 # conda's package cache defaults to $HOME, which has a small quota. Point it
 # at scratch before creating anything.

@@ -88,7 +88,8 @@ def main() -> int:
     # shares; take them from the first one rather than hard-coding a name.
     first = next(iter(cfg['variants'].values()))
     probe = DesignConfig(**{k: v for k, v in first.items()
-                            if k != 'restrict_to_label'})
+                            if k != 'restrict_to_label'
+                            and not k.startswith('_')})
 
     audit_lengths(keys, full_data, features, labels).to_csv(
         results / 'audit_lengths.csv', index=False)
@@ -120,6 +121,8 @@ def main() -> int:
                 ss = pickle.load(f)
             print(f'[{name}] reusing existing SessionSet', flush=True)
         else:
+            # Underscore-prefixed keys are annotations, not DesignConfig
+            # fields; strip them so configs can carry comments.
             spec = {k: v for k, v in spec.items() if not k.startswith('_')}
             restrict = spec.pop('restrict_to_label', None)
             dcfg = DesignConfig(**spec)

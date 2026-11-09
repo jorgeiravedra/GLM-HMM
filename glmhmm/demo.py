@@ -56,7 +56,7 @@ def _ou(T, tau_s, fs, rng):
 def make_synthetic(n_animals: int = 6, sessions_per_animal: int = 3,
                    T: int = 6000, fs: float = 40.0, tau_s: float = 1.5,
                    switch_strength: float = 1.0, noise: float = 1.0,
-                   seed: int = 20261104):
+                   animal_jitter: float = 0.15, seed: int = 20261104):
     """Generate dictionaries matching the real data's schema.
 
     Planted ground truth
@@ -87,8 +87,6 @@ def make_synthetic(n_animals: int = 6, sessions_per_animal: int = 3,
     W_INT = rng.standard_normal(len(FEATURE_NAMES)) * 0.9
     W_RES[~is_res] *= 0.1
     W_INT[~is_int] *= 0.1
-    animal_jitter = 0.15
-
     for ai, animal in enumerate(animals):
         w_res = W_RES * (1 + animal_jitter * rng.standard_normal(W_RES.size))
         w_int = W_INT * (1 + animal_jitter * rng.standard_normal(W_INT.size))

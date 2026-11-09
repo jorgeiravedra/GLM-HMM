@@ -33,7 +33,8 @@ from .data import (parse_session, audit_lengths, audit_alignment, effective_n,
 from .model import SwitchingGLM
 from .evaluate import (fit_loao, select_K, state_behavior_correspondence,
                        state_summary, weight_table, shuffle_control,
-                       variance_partition, weight_sharing_test, scaling_stability,
+                       variance_partition, weight_sharing_test, fit_loso_within_animal,
+                       scaling_stability,
                        states_are_variance_regimes)
 from .plotting import (plot_K_selection, plot_state_raster, plot_weight_matrix,
                        plot_state_behavior, plot_loao_r2, savefig)
@@ -48,6 +49,7 @@ __all__ = [
     'SessionSet', 'build_sessionset', 'SwitchingGLM',
     'fit_loao', 'select_K', 'state_behavior_correspondence', 'state_summary',
     'weight_table', 'shuffle_control', 'variance_partition', 'weight_sharing_test',
+    'fit_loso_within_animal',
     'scaling_stability',
     'states_are_variance_regimes',
     'plot_K_selection', 'plot_state_raster', 'plot_weight_matrix',

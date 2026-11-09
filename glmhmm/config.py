@@ -154,6 +154,25 @@ class FitConfig:
         local level of y) and removes the encoding channel entirely. If a
         share_weights fit recovers most of an unconstrained model's held-out
         gain over K=1, the states are not encoding regimes.
+    hier_tau
+        Partial pooling of regression weights across animals. None (default)
+        fits one shared W per state -- complete pooling, which assumes the
+        filters are stationary across animals. A float instead fits
+        W_a = W_group + delta_a per animal, penalising each deviation by
+        hier_tau: large tau approaches complete pooling, small tau approaches
+        a separate fit per animal.
+
+        Motivation: fibre placement within a region, expression level and the
+        observer's platform position all vary between animals. Complete
+        pooling averages animal-specific filters toward zero, so a null can
+        reflect heterogeneity rather than absent encoding.
+
+        Under leave-one-animal-out the held-out animal has no delta_a, so
+        prediction uses W_group alone. The benefit is therefore a better-
+        estimated group filter, not a personalised one, and the gain is
+        expected to be modest. To ask whether pooling is the limiting factor,
+        use evaluate.fit_loso_within_animal instead, which keeps the fit
+        inside one animal.
     seed
         Restart seeding. Fixed by default for reproducibility.
     """
@@ -165,6 +184,7 @@ class FitConfig:
     var_floor: float = 1e-4
     sticky: float = 0.0
     share_weights: bool = False
+    hier_tau: float | None = None
     seed: int = 20261104
     verbose: bool = False
 

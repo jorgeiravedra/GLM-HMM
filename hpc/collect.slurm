@@ -8,7 +8,7 @@
 #SBATCH --output=/scratch/gpfs/AFALKNER/jmig/glmhmm/logs/collect_%j.out
 #SBATCH --error=/scratch/gpfs/AFALKNER/jmig/glmhmm/logs/collect_%j.err
 #SBATCH --mail-type=end,fail
-#SBATCH --mail-user=jmig@princeton.edu
+#SBATCH --mail-user=CHANGEME@princeton.edu
 
 # The controls dominate this stage: variance_partition refits the full LOAO
 # set once per knocked-out feature group, and shuffle_control refits it

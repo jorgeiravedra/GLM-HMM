@@ -86,6 +86,32 @@ set once per knocked-out feature group, `shuffle_control` refits it
 `n_shuffle` times per K. For a quick look at the merged LOAO table first, run
 `python hpc/collect.py --config hpc/config.json --skip-controls` interactively.
 
+## Reading results while the array is still running
+
+Each finished fit is a self-contained pickle, so the audits and the LOAO /
+K-selection tables are readable before `collect.py` runs. From a local
+machine with the project mounted:
+
+```python
+import sys; sys.path.insert(0, r'S:\\jmig\\glmhmm')
+from hpc.peek import Peek
+P = Peek(r'S:\\jmig\\glmhmm')
+
+P.progress()        # how much of the array has landed
+P.alignment()       # the gate everything depends on
+P.K_selection()     # paired gain over K=1; `complete` flags partial K curves
+P.loao()            # per-fold LL and R^2
+P.design('ar0')     # design width, to compare against audit_effective_n.csv
+```
+
+`progress`, `alignment`, `loao`, `K_selection` and `design` need only numpy
+and pandas. `model()` and `sessionset()` need `glmhmm` importable, hence the
+`sys.path` line.
+
+Rows in `K_selection` with `complete == False` have folds still missing; an
+unbalanced K curve is not comparable across K, so wait for those before
+reading a winner.
+
 ## Reading results
 
 ```python
